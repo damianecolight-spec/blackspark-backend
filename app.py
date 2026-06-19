@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "<h1>Silnik Black Spark Corel-Parser działa!</h1><p>Wyślij plik .cdr metodą POST na /parse</p>"
+    return "<h1>Silnik Black Spark Corel-Parser działa! (Wersja 2.0)</h1><p>Wyślij plik .cdr metodą POST na /parse</p>"
 
 @app.route('/parse', methods=['POST'])
 def parse_cdr():
@@ -18,7 +18,6 @@ def parse_cdr():
     if file.filename == '':
         return jsonify({"error": "Nie wybrano pliku"}), 400
 
-    # ZASADA ULOTNOŚCI: Zapisujemy plik tylko tymczasowo
     temp_path = "temp_file.cdr"
     file.save(temp_path)
 
@@ -28,20 +27,29 @@ def parse_cdr():
 
     try:
         with zipfile.ZipFile(temp_path, 'r') as archive:
+            zawartosc = archive.namelist()
             
-            # --- ZMODYFIKOWANY RENTGEN ---
-            # Jeśli nie ma pliku root.xml, pokaż dokładnie co jest w środku
-            if 'content/root.xml' not in archive.namelist():
-                znalezione_pliki = archive.namelist()
+            # --- INTELIGENTNE WYSZUKIWANIE ---
+            # Sprawdzamy kilka możliwych lokalizacji tekstów w zależności od wersji Corela
+            cel_xml = None
+            if 'content/root.xml' in zawartosc:
+                cel_xml = 'content/root.xml'
+            elif 'metadata/textinfo.xml' in zawartosc:
+                cel_xml = 'metadata/textinfo.xml'
+            
+            # Jeśli plik to twardy binariusz (.dat) bez żadnego XML-a
+            if not cel_xml:
                 os.remove(temp_path)
                 return jsonify({
-                    "error": "Brak standardowego pliku content/root.xml",
-                    "ale_znalazlem_to": znalezione_pliki
+                    "error": "Ten plik zapisano w formacie czysto binarnym. Spróbuj zapisać go w Corelu bez włączonej kompresji.",
+                    "znalazlem_te_pliki": zawartosc
                 }), 400
-            # -----------------------------
+
+            print(f"🔓 Namierzono cel: {cel_xml}")
             
             extracted_texts = []
-            with archive.open('content/root.xml') as xml_file:
+            with archive.open(cel_xml) as xml_file:
+                # Omijamy błędy z przestrzeniami nazw (namespaces)
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
 
@@ -51,12 +59,11 @@ def parse_cdr():
                         if len(text_content) > 1 and not text_content.startswith('{'):
                             extracted_texts.append(text_content)
             
-            # AUTODESTRUKCJA: Usuwamy plik z dysku serwera natychmiast po przetworzeniu
             os.remove(temp_path)
             
             return jsonify({
                 "status": "success",
-                "message": "Dane zabezpieczone i wyczyszczone z serwera (NDA Safe)",
+                "message": f"Przechwycono z pliku: {cel_xml}",
                 "found_texts": extracted_texts
             })
 
