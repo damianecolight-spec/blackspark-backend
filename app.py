@@ -28,9 +28,17 @@ def parse_cdr():
 
     try:
         with zipfile.ZipFile(temp_path, 'r') as archive:
+            
+            # --- ZMODYFIKOWANY RENTGEN ---
+            # Jeśli nie ma pliku root.xml, pokaż dokładnie co jest w środku
             if 'content/root.xml' not in archive.namelist():
+                znalezione_pliki = archive.namelist()
                 os.remove(temp_path)
-                return jsonify({"error": "Brak struktury XML w pliku"}), 400
+                return jsonify({
+                    "error": "Brak standardowego pliku content/root.xml",
+                    "ale_znalazlem_to": znalezione_pliki
+                }), 400
+            # -----------------------------
             
             extracted_texts = []
             with archive.open('content/root.xml') as xml_file:
